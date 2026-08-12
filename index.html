@@ -88,6 +88,7 @@ td select{width:auto;padding:5px 8px;font-size:13px}
 <div class="tabs">
   <button id="tabBtn0" class="on" onclick="showTab(0)">📊 이수 현황</button>
   <button id="tabBtn1" onclick="showTab(1)">🗓️ 수강 계획</button>
+  <button id="tabBtn2" onclick="showTab(2)">📚 커리큘럼</button>
 </div>
 
 <!-- ===== 탭 1: 이수 현황 ===== -->
@@ -105,7 +106,7 @@ td select{width:auto;padding:5px 8px;font-size:13px}
   <div class="note">
     ※ 기본전공 = 전필+전선 / 융합전공 = 융선 / 특화 = 특필+특선 / 교양 = 교필+교선.<br>
     ※ 심화전공(심선) 과목은 융합전공 트랙에서는 졸업요건 외 여유학점으로 총 학점에만 포함돼요.<br>
-    ※ 기본전공 과목 중 융합전공과 유사한 과목은 위원회 심의로 최대 9학점까지 융합전공 인정 가능(운영지침 제4조) — 해당되면 과목의 이수구분을 융선으로 바꿔서 반영하세요.
+    ※ 융합전공과 중복 인정되는 과목(데이터베이스, 기초경영과학 등)은 과목명 아래 <b style="color:var(--orange)">융합전공 중복인정</b>을 체크하면 원래 구분은 유지하면서 융합전공에 최대 9학점까지 합산돼요(운영지침 제4조, 실제 인정은 위원회 심의 필요).
   </div>
 </section>
 
@@ -154,7 +155,19 @@ td select{width:auto;padding:5px 8px;font-size:13px}
   </div>
   <div class="cat-list" id="catList"></div>
   <div class="note">담기를 누르면 과목의 권장 학기로 들어가요 (권장 학기가 없으면 위에서 선택한 학기). 담은 후에 학기는 아래에서 바꿀 수 있어요.<br>
-  ※ <b style="color:var(--orange)">융합전공 인정</b> 표시가 있는 과목은 전공/교양/특화이면서 융합전공으로도 인정되는 과목이에요. 융합전공 학점으로 채우려면 담은 뒤 아래 목록에서 구분을 <b>융선</b>으로 바꾸세요.</div>
+  ※ <b style="color:var(--orange)">융합전공 인정</b> 표시가 있는 과목은 전공/교양/특화이면서 융합전공으로도 중복 인정되는 과목이에요. 담은 뒤 아래 목록에서 <b>융합전공 중복인정</b>을 체크하면 원래 구분에 그대로 있으면서 융합전공에도 최대 9학점까지 합산돼요 (실제 인정은 위원회 심의 필요).</div>
+</section>
+
+<section class="card">
+  <h2>목록에 없는 과목 직접 담기</h2>
+  <form onsubmit="return addPlanCustom(event)" style="grid-template-columns:1fr 2fr .8fr 1fr auto">
+    <div><label>학기</label><select id="pfSem"></select></div>
+    <div><label>과목명</label><input id="pfName" placeholder="예: 교양 영어회화" required autocomplete="off"></div>
+    <div><label>학점</label><input id="pfCr" type="number" min="0.5" max="18" step="0.5" value="3" required></div>
+    <div><label>이수구분</label><select id="pfType"></select></div>
+    <button class="btn-add" type="submit">담기</button>
+  </form>
+  <div class="note">일반 교양(교선), 타과 과목 등 학과 목록에 없는 과목은 여기서 직접 담으면 돼요.</div>
 </section>
 
 <section class="card">
@@ -163,6 +176,17 @@ td select{width:auto;padding:5px 8px;font-size:13px}
   <div class="io">
     <button class="btn-ghost" style="color:var(--red)" onclick="if(confirm('수강 계획을 모두 비울까요?')){plan=[];saveP();renderPlanAll()}">계획 비우기</button>
   </div>
+</section>
+</div>
+
+<!-- ===== 탭 3: 커리큘럼 ===== -->
+<div id="tab2" style="display:none">
+<section class="card" style="margin-top:0">
+  <h2>2025학년도 교육과정 한눈에 보기</h2>
+  <div class="legend"><span>과목을 여기서 바로 계획에 담을 수도 있어요</span></div>
+  <div id="currList"></div>
+  <div class="note">※ 2025학년도 교육과정 안내 기준. 교필 "택1" 영역과 교양선택은 학교 전체 개설과목에서 선택 (수강 계획 탭에서 직접 담기).<br>
+  ※ <b style="color:var(--orange)">융합인정</b> = 전공/교양/특화이면서 융합전공으로도 중복 인정 가능한 과목 (최대 9학점).</div>
 </section>
 </div>
 
@@ -223,6 +247,11 @@ const REQS=[
 ];
 const MAJOR_TYPES=["전필","전선","심선","융선"];
 const TOTAL_NEED=130;
+const FUSION_CAP=9; // 융합전공 중복인정 한도(운영지침 제4조)
+const FUSION_SET=new Set(CATALOG.filter(c=>c[4]).map(c=>c[0]));
+function isDual(c){return c.type!=="융선"&&(FUSION_SET.has(c.name)||c.fu);}
+function fuTaken(){return Math.min(FUSION_CAP,earned(db.filter(c=>c.fu&&c.type!=="융선")));}
+function fuPlanned(){return Math.min(FUSION_CAP-fuTaken(),plan.filter(p=>p.fu&&p.type!=="융선").reduce((s,c)=>s+c.cr,0));}
 
 // ===== 성적표 기반 초기 데이터 (2025-1 ~ 2026-1) =====
 const DEFAULT_DATA=[
@@ -254,10 +283,10 @@ const $=id=>document.getElementById(id);
 
 // ===== 탭 =====
 function showTab(n){
-  $("tab0").style.display=n===0?"":"none";
-  $("tab1").style.display=n===1?"":"none";
-  $("tabBtn0").classList.toggle("on",n===0);
-  $("tabBtn1").classList.toggle("on",n===1);
+  [0,1,2].forEach(i=>{
+    $("tab"+i).style.display=i===n?"":"none";
+    $("tabBtn"+i).classList.toggle("on",i===n);
+  });
 }
 
 // ===== 공통 =====
@@ -292,6 +321,8 @@ function addCourse(e){
   return false;
 }
 function delCourse(id){db=db.filter(c=>c.id!==id);save();renderAll();}
+function toggleFu(id){const c=db.find(c=>c.id===id);if(c){c.fu=!c.fu;save();renderAll();}}
+function toggleFuP(id){const p=plan.find(p=>p.id===id);if(p){p.fu=!p.fu;saveP();renderPlanAll();}}
 function chGrade(id,g){const c=db.find(c=>c.id===id);if(c){c.grade=g;save();renderAll();}}
 function chType(id,t){const c=db.find(c=>c.id===id);if(c){c.type=t;save();renderAll();}}
 
@@ -302,12 +333,15 @@ function render(){
   $("gpaMaj").innerHTML=`${fmt(gpa(db.filter(c=>MAJOR_TYPES.includes(c.type))))}<small> / 4.5</small>`;
   $("cnt").innerHTML=`${db.length}<small> 과목</small>`;
   let bars="";
+  const fuX=fuTaken();
   REQS.forEach(r=>{
-    const got=earned(db.filter(c=>r.types.includes(c.type)));
+    let got=earned(db.filter(c=>r.types.includes(c.type)));
+    let extra="";
+    if(r.types.includes("융선")&&fuX){got+=fuX;extra=` <span style="color:var(--sub)">(중복인정 ${fuX} 포함)</span>`;}
     if(r.need===0&&got===0)return;
     const pct=r.need?Math.min(100,got/r.need*100):(got?100:0);
     const ok=r.need&&got>=r.need;
-    bars+=`<div class="bar-row"><div class="bar-head"><b>${r.key}</b><span>${got}${r.need?` / ${r.need}학점`:"학점"} ${ok?'<span class="done">✓ 충족</span>':r.need?`(${Math.max(0,r.need-got)}학점 남음)`:""}</span></div><div class="bar"><i style="width:${pct}%;background:${r.color};border-radius:99px"></i></div></div>`;
+    bars+=`<div class="bar-row"><div class="bar-head"><b>${r.key}</b><span>${got}${r.need?` / ${r.need}학점`:"학점"}${extra} ${ok?'<span class="done">✓ 충족</span>':r.need?`(${Math.max(0,r.need-got)}학점 남음)`:""}</span></div><div class="bar"><i style="width:${pct}%;background:${r.color};border-radius:99px"></i></div></div>`;
   });
   const tpct=Math.min(100,tot/TOTAL_NEED*100),tok=tot>=TOTAL_NEED;
   bars+=`<div class="bar-row" style="margin-top:20px;padding-top:14px;border-top:1px dashed var(--line)"><div class="bar-head"><b>총 취득학점</b><span>${tot} / ${TOTAL_NEED}학점 ${tok?'<span class="done">✓ 충족</span>':`(${TOTAL_NEED-tot}학점 남음)`}</span></div><div class="bar" style="height:14px"><i style="width:${tpct}%;background:linear-gradient(90deg,var(--blue),var(--purple));border-radius:99px"></i></div></div>`;
@@ -321,7 +355,8 @@ function render(){
     html+=`<div class="sem-title">${semLabel(s)}<span>${earned(list)}학점 · 평점 ${fmt(gpa(list))}</span></div>
     <table><tr><th style="width:38%">과목명</th><th>이수구분</th><th>학점</th><th>성적</th><th></th></tr>`;
     list.forEach(c=>{
-      html+=`<tr><td>${c.name}</td>
+      const fuChk=isDual(c)?`<div style="font-size:11px;margin-top:2px"><label style="display:inline;color:var(--orange);cursor:pointer"><input type="checkbox" style="width:auto;vertical-align:-2px" ${c.fu?"checked":""} onchange="toggleFu(${c.id})"> 융합전공 중복인정</label></div>`:"";
+      html+=`<tr><td>${c.name}${fuChk}</td>
       <td><select onchange="chType(${c.id},this.value)" style="color:${TYPE_COLOR[c.type]};font-weight:600">${TYPES.map(t=>`<option ${t===c.type?"selected":""}>${t}</option>`).join("")}</select></td>
       <td>${c.cr}</td>
       <td><select onchange="chGrade(${c.id},this.value)">${Object.keys(GRADES).map(g=>`<option ${g===c.grade?"selected":""}>${g}</option>`).join("")}</select></td>
@@ -353,6 +388,18 @@ let chipSel=0;
 $("typeChips").innerHTML=CHIP_GROUPS.map((g,i)=>`<button class="chip${i===0?" on":""}" id="chip${i}" onclick="selChip(${i})">${g[0]}</button>`).join("");
 function selChip(i){chipSel=i;CHIP_GROUPS.forEach((g,j)=>$("chip"+j).classList.toggle("on",i===j));renderCat();}
 $("pSem").innerHTML='<option value="">권장학기 전체</option>'+SEMS.map(s=>`<option value="${s}">${semLabel(s)}</option>`).join("");
+$("pfSem").innerHTML=SEMS.map(s=>`<option>${s}</option>`).join("");
+$("pfType").innerHTML=TYPES.map(t=>`<option ${t==="교선"?"selected":""}>${t}</option>`).join("");
+function addPlanCustom(e){
+  e.preventDefault();
+  const name=$("pfName").value.trim();
+  if(db.some(c=>c.name===name)){alert("이미 이수한 과목이에요.");return false;}
+  if(plan.some(p=>p.name===name)){alert("이미 계획에 담긴 과목이에요.");return false;}
+  plan.push({id:Date.now(),sem:$("pfSem").value,name,cr:parseFloat($("pfCr").value),type:$("pfType").value,eg:"미정"});
+  saveP();renderPlanAll();
+  $("pfName").value="";$("pfCr").value=3;
+  return false;
+}
 
 const EG=["미정","A+","A0","B+","B0","C+","C0"];
 
@@ -389,9 +436,11 @@ function chEG(id,g){const p=plan.find(p=>p.id===id);if(p){p.eg=g;saveP();renderP
 
 function renderPlan(){
   let bars="";
+  const fuT=fuTaken(),fuP=fuPlanned();
   REQS.forEach(r=>{
-    const got=earned(db.filter(c=>r.types.includes(c.type)));
-    const pl=plan.filter(c=>r.types.includes(c.type)).reduce((s,c)=>s+c.cr,0);
+    let got=earned(db.filter(c=>r.types.includes(c.type)));
+    let pl=plan.filter(c=>r.types.includes(c.type)).reduce((s,c)=>s+c.cr,0);
+    if(r.types.includes("융선")){got+=fuT;pl+=fuP;}
     if(r.need===0&&got===0&&pl===0)return;
     const base=r.need||Math.max(got+pl,1);
     const gp=Math.min(100,got/base*100);
@@ -399,7 +448,8 @@ function renderPlan(){
     const okNow=r.need&&got>=r.need;
     const okPlan=r.need&&got+pl>=r.need;
     let status=okNow?'<span class="done">✓ 충족</span>':okPlan?'<span class="plan-txt">✓ 계획대로면 충족</span>':r.need?`(${r.need-got-pl}학점 더 필요)`:"";
-    bars+=`<div class="bar-row"><div class="bar-head"><b>${r.key}</b><span>${got}${pl?` <span class="plan-txt">+${pl}</span>`:""}${r.need?` / ${r.need}학점`:"학점"} ${status}</span></div>
+    const dualNote=r.types.includes("융선")&&(fuT||fuP)?` <span style="color:var(--sub)">(중복인정 ${fuT+fuP} 포함)</span>`:"";
+    bars+=`<div class="bar-row"><div class="bar-head"><b>${r.key}</b><span>${got}${pl?` <span class="plan-txt">+${pl}</span>`:""}${r.need?` / ${r.need}학점`:"학점"}${dualNote} ${status}</span></div>
     <div class="bar"><i style="width:${gp}%;background:${r.color};border-radius:99px 0 0 99px"></i><i style="width:${pp}%;background:#fbbf77"></i></div></div>`;
   });
   const tot=earned(db),ptot=plan.reduce((s,c)=>s+c.cr,0);
@@ -429,7 +479,8 @@ function renderPlanList(){
     html+=`<div class="sem-title">${semLabel(s)}<span>${cr}학점 계획${cr>21?' · <b style="color:var(--red)">21학점 초과!</b>':""}</span></div>
     <table><tr><th style="width:36%">과목명</th><th>구분</th><th>학점</th><th>학기</th><th>예상성적</th><th></th></tr>`;
     list.forEach(p=>{
-      html+=`<tr><td>${p.name}</td>
+      const fuChk=isDual(p)?`<div style="font-size:11px;margin-top:2px"><label style="display:inline;color:var(--orange);cursor:pointer"><input type="checkbox" style="width:auto;vertical-align:-2px" ${p.fu?"checked":""} onchange="toggleFuP(${p.id})"> 융합전공 중복인정</label></div>`:"";
+      html+=`<tr><td>${p.name}${fuChk}</td>
       <td><select onchange="chPlanType(${p.id},this.value)" style="color:${TYPE_COLOR[p.type]};font-weight:600">${TYPES.map(t=>`<option ${t===p.type?"selected":""}>${t}</option>`).join("")}</select></td>
       <td>${p.cr}</td>
       <td><select onchange="chPlanSem(${p.id},this.value)">${SEMS.map(x=>`<option ${x===p.sem?"selected":""}>${x}</option>`).join("")}</select></td>
@@ -440,7 +491,33 @@ function renderPlanList(){
   });
   $("planList").innerHTML=html;
 }
-function renderPlanAll(){renderPlan();renderPlanList();renderCat();}
+// ===== 커리큘럼 탭 =====
+function currBtn(name){
+  const taken=db.some(d=>d.name===name);
+  const inPlan=plan.some(p=>p.name===name);
+  return taken?'<button class="b-done">✓ 이수완료</button>':inPlan?'<button class="b-in">담김</button>':`<button class="b-pick" onclick="pick('${name.replace(/'/g,"\\'")}')">+ 담기</button>`;
+}
+function renderCurr(){
+  const groups=[["1-1","1학년 1학기"],["1-2","1학년 2학기"],["2-1","2학년 1학기"],["2-2","2학년 2학기"],
+    ["3-1","3학년 1학기"],["3-2","3학년 2학기"],["4-1","4학년 1학기"],["4-2","4학년 2학기"],
+    ["계절","계절학기"],["","전학년 / 학기 무관"]];
+  let html="";
+  groups.forEach(([sem,label])=>{
+    const list=CATALOG.filter(c=>c[3]===sem);
+    if(!list.length)return;
+    const done=list.filter(c=>db.some(d=>d.name===c[0])).length;
+    html+=`<div class="sem-title">${label}<span>${list.length}과목 개설 · ${done}과목 이수</span></div><div class="cat-list" style="max-height:none">`;
+    list.forEach(c=>{
+      html+=`<div class="cat-item">
+        <span class="tag" style="background:${TYPE_COLOR[c[2]]}18;color:${TYPE_COLOR[c[2]]}">${c[2]}</span>
+        <div class="nm">${c[0]}<div class="meta">${c[1]}학점${c[4]?' · <b style="color:var(--orange)">융합인정</b>':""}</div></div>
+        ${currBtn(c[0])}</div>`;
+    });
+    html+="</div>";
+  });
+  $("currList").innerHTML=html;
+}
+function renderPlanAll(){renderPlan();renderPlanList();renderCat();renderCurr();}
 function renderAll(){render();renderPlanAll();}
 renderAll();
 </script>
