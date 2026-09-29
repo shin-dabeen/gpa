@@ -83,6 +83,7 @@ td select{width:auto;padding:5px 8px;font-size:13px}
 </head>
 <body>
 <h1>산업경영공학과 학점 관리</h1>
+<div id="syncBar" style="margin:8px 0 14px;font-size:13px;color:var(--sub)"></div>
 
 <div class="tabs">
   <button id="tabBtn0" class="on" onclick="showTab(0)">📊 이수 현황</button>
@@ -108,7 +109,7 @@ td select{width:auto;padding:5px 8px;font-size:13px}
   <h2>과목 추가</h2>
   <form id="f" onsubmit="return addCourse(event)">
     <div><label>학기</label><select id="fSem"></select></div>
-    <div><label>과목명)</label><input id="fName" list="catalog" placeholder="과목명 검색..." required autocomplete="off"></div>
+    <div><label>과목명 (목록에서 선택하거나 직접 입력)</label><input id="fName" list="catalog" placeholder="과목명 검색..." required autocomplete="off"></div>
     <div><label>학점</label><input id="fCr" type="number" min="0.5" max="18" step="0.5" value="3" required></div>
     <div><label>이수구분</label><select id="fType"></select></div>
     <div><label>성적</label><select id="fGrade"></select></div>
@@ -124,8 +125,7 @@ td select{width:auto;padding:5px 8px;font-size:13px}
     <button class="btn-ghost" onclick="exportData()">백업 내보내기</button>
     <button class="btn-ghost" onclick="document.getElementById('imp').click()">백업 불러오기</button>
     <input type="file" id="imp" accept=".json" style="display:none" onchange="importData(event)">
-    <button class="btn-ghost" onclick="if(confirm('처음 설정해둔 이수 내역으로 되돌릴까요? 직접 수정한 내용은 사라집니다.')){loadDefaults();renderAll()}">기본값으로 되돌리기</button>
-    <button class="btn-ghost" style="color:var(--red)" onclick="if(confirm('이수 내역을 모두 삭제할까요?')){db=[];save();renderAll()}">전체 비우기</button>
+    <button class="btn-ghost" style="color:var(--red)" onclick="if(confirm('이수 내역을 모두 삭제할까요?')){db=[];save();renderAll()}">전체 초기화</button>
   </div>
 </section>
 </div>
@@ -165,7 +165,6 @@ td select{width:auto;padding:5px 8px;font-size:13px}
   <h2>나의 수강 계획</h2>
   <div id="planList"><div class="empty">아직 담은 과목이 없어요. 위에서 과목을 담아보세요!</div></div>
   <div class="io">
-    <button class="btn-ghost" onclick="if(confirm('처음 설정해둔 3-1~4-1 수강 계획으로 되돌릴까요?')){plan=DEFAULT_PLAN.map(c=>({...c}));saveP();renderPlanAll()}">기본 계획으로 되돌리기</button>
     <button class="btn-ghost" style="color:var(--red)" onclick="if(confirm('수강 계획을 모두 비울까요?')){plan=[];saveP();renderPlanAll()}">계획 비우기</button>
   </div>
 </section>
@@ -174,39 +173,42 @@ td select{width:auto;padding:5px 8px;font-size:13px}
 <!-- ===== 탭 3: 커리큘럼 ===== -->
 <div id="tab2" style="display:none">
 <section class="card" style="margin-top:0">
-  <h2>2025학년도 교육과정</h2>
+  <h2>2025학년도 교육과정 한눈에 보기</h2>
   <div id="currList"></div>
 </section>
 </div>
 
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
 <script>
 // ===== 과목 카탈로그 (2025학년도 교육과정 기준) [과목명, 학점, 이수구분, 권장학기, 융합전공인정(1)] =====
 const CATALOG=[
-["대학영어",2,"교필","1-1"],
-["기초물리학",3,"교필","1-1"], ["기초미분적분학",3,"교필","1-1"],
-["4차산업혁명의이해",1,"특선","1-1",1],
-["산업경영공학개론(융합자율대학)",3,"전필","1-2"],["창의적공학설계(융합자율대학)",3,"특필","1-2",1],
-["발표와 토론",2,"교필","1-2"],["일반화학",3,"교필","1-2"],["기초통계학",3,"교필","1-2"],["물리학 및 실험 I",3,"교필","1-2"],
+["진로설계1(자기이해와 대학생활)",1,"특필","1-1"],["창의적 공학설계",3,"특필","1-1"],["대학영어",2,"교필","1-1"],
+["기초물리학",3,"교필","1-1"],["글쓰기(공학/창의)",2,"교필","1-1"],["기초미분적분학",3,"교필","1-1"],
+["분석과 판단 영역 택1",3,"교필","1-1"],["4차산업혁명의이해",1,"특선","1-1",1],
+["산업경영공학개론",3,"전필","1-2"],["산업경영공학개론(융합자율대학)",3,"전필","1-2"],["창의적공학설계(융합자율대학)",3,"특필","1-2"],
+["발표와 토론",2,"교필","1-2"],["일반화학",3,"교필","1-2"],["기초통계학",3,"교필","1-2"],["물리학및실험I",3,"교필","1-2"],
 ["Python 프로그래밍",3,"교필","1-2",1],["스마트팩토리개론",1,"특선","1-2",1],
 ["이산수학",3,"전필","2-1"],["공업통계",3,"전필","2-1"],["작업 설계 및 측정",3,"전필","2-1"],
-["진로설계2(진로탐색과 자기계발)",1,"특필","2-1"],
+["진로설계2(진로탐색과 자기계발)",1,"특필","2-1"],["소통과 인성 영역 택1",3,"교필","2-1"],
 ["경제성공학",3,"전선","2-1"],["제조공학의기초",3,"전선","2-1"],["휴먼시스템실무1",3,"전선","2-1"],
 ["데이터시각화",3,"전선","2-1"],["인지공학개론",3,"전선","2-1"],["기초 3D프린팅",3,"심선","2-1"],
 ["인공지능빅데이터개론",1,"특선","2-1",1],["메카트로닉스기초1",3,"융선","2-1"],
-["선형대수",3,"전필","2-2"],["객체지향 프로그래밍",3,"전필","2-2",1],["품질경영개론",3,"전필","2-2"],
-["공업통계응용",3,"전선","2-2"],["기술경영개론",3,"전선","2-2",1],
+["선형대수",3,"전필","2-2"],["객체지향 프로그래밍",3,"전필","2-2"],["품질경영개론",3,"전필","2-2"],
+["도전과 미래 영역 택1",3,"교필","2-2"],["공업통계응용",3,"전선","2-2"],["기술경영개론",3,"전선","2-2",1],
 ["제품개발론",3,"전선","2-2",1],["감성공학",3,"심선","2-2"],["메카트로닉스기초2",3,"융선","2-2"],
 ["기초경영과학",3,"전필","3-1",1],["데이터베이스",3,"전필","3-1",1],["진로설계3(진로설정과 경력개발)",1,"특필","3-1"],
-["공급사슬관리(SCM)",3,"전선","3-1",1],["생산운영관리",3,"전선","3-1"],["선형계획법",3,"전선","3-1"],
+["공급사슬관리(SCM)",3,"전선","3-1"],["생산운영관리",3,"전선","3-1"],["선형계획법",3,"전선","3-1"],
 ["마케팅과 기술혁신",3,"심선","3-1"],["컴퓨터통계분석",3,"심선","3-1"],["3D 프린팅 응용",3,"심선","3-1"],
 ["스마트팩토리품질관리",3,"융선","3-1"],["스마트팩토리시뮬레이션",3,"융선","3-1"],
-["경영과학응용",3,"전필","3-2",1],["실험계획법",3,"전필","3-2",1],["인간공학",3,"전필","3-2",1],
-["경영정보시스템",3,"전선","3-2",1],["의사결정론",3,"전선","3-2",1],["조사분석론",3,"심선","3-2"],
+["경영과학응용",3,"전필","3-2",1],["실험계획법",3,"전필","3-2"],["인간공학",3,"전필","3-2"],
+["경영정보시스템",3,"전선","3-2"],["의사결정론",3,"전선","3-2",1],["조사분석론",3,"심선","3-2"],
 ["품질관리 및 신뢰성",3,"심선","3-2"],["스타트업경영론",3,"심선","3-2"],["확률과정론",3,"심선","3-2"],
 ["스마트팩토리물류",3,"융선","3-2"],["스마트생산시스템",3,"융선","3-2"],
-["디지털매뉴팩처링",3,"융선","3-2"],
+["스마트팩토리실습(캡스톤디자인)",3,"융선","3-2"],["디지털매뉴팩처링",3,"융선","3-2"],
 ["기업가 정신과 창업",1,"특필","4-1"],["진로설계4(취업전략과 실전취업)",1,"특필","4-1"],
-["산업공학실무(캡스톤디자인)",3,"특필","4-1",1],["설비관리",3,"전선","4-1",1],["빅데이터분석",3,"전선","4-1",1],
+["산업공학실무(캡스톤디자인)",3,"특필","4-1"],["설비관리",3,"전선","4-1"],["빅데이터분석",3,"전선","4-1",1],
 ["기업전략 사례연구",3,"심선","4-1"],["공학 경제 및 회계",3,"심선","4-1"],["지식재산과 기술사업화",3,"심선","4-1"],
 ["투자공학개론",3,"심선","4-1"],["응용인간공학",3,"심선","4-1"],
 ["휴먼시스템실무2",3,"전선","4-2"],["고객행동분석",3,"전선","4-2"],["품질경영실무",3,"심선","4-2"],
@@ -214,12 +216,13 @@ const CATALOG=[
 ["프로젝트관리론",3,"심선","4-2"],["불확실성하의 의사결정",3,"심선","4-2"],
 ["학기제 산업공학현장실습 I형",6,"심선",""],["학기제 산업공학현장실습 II형",9,"심선",""],
 ["현장실습프로젝트",2,"특선","계절"],["캡스톤디자인(1)",3,"특선",""],["캡스톤디자인(2)",3,"특선",""],["글로벌캡스톤디자인",3,"특선",""],
-["융합공학개론1",3,"융선","1-1"],
-["융합공학개론2",3,"융선","1-2"],["창의적문제해결",3,"융선","2-1"],
-["기계학습개론",3,"융선","2-2"],
-["스마트3D프린팅",3,"융선","3-1"],["인공지능프로그래밍",3,"융선","3-1"],
-["SW융합기업실무",3,"융선","3-2"],["사물인터넷",3,"융선","3-2"],
-["SW융합캡스톤디자인",3,"융선","4-1"],["IoT센서공학",3,"융선","4-2"]
+["융합공학개론1",3,"융선","1-1"],["스마트공학설계",3,"융선","1-1"],["융합IoT개론",1,"융선","1-2"],
+["융합공학개론2",3,"융선","1-2"],["창의적문제해결",3,"융선","2-1"],["시뮬레이션프로그래밍기초",3,"융선","2-2"],
+["스마트팩토리경제성공학",3,"융선","2-2"],["기계학습개론",3,"융선","2-2"],["스마트공급사슬관리",3,"융선","3-1"],
+["스마트3D프린팅",3,"융선","3-1"],["스마트생산계획",3,"융선","3-1"],["인공지능프로그래밍",3,"융선","3-1"],
+["스마트 공정 실험계획법",3,"융선","3-2"],["스마트휴먼팩토리",3,"융선","3-2"],["스마트경영정보시스템",3,"융선","3-2"],
+["SW융합기업실무",3,"융선","3-2"],["사물인터넷",3,"융선","3-2"],["스마트생산자원관리",3,"융선","4-1"],
+["스마트팩토리랩(캡스톤디자인)",3,"융선","4-1"],["SW융합캡스톤디자인",3,"융선","4-1"],["IoT센서공학",3,"융선","4-2"]
 ];
 const TYPES=["교필","교선","전필","전선","심선","융선","특필","특선","일선"];
 const TYPE_COLOR={교필:"#0d9488",교선:"#0d9488",전필:"#2563eb",전선:"#2563eb",심선:"#9333ea",융선:"#ea580c",특필:"#16a34a",특선:"#16a34a",일선:"#64748b"};
@@ -236,24 +239,10 @@ const REQS=[
 const MAJOR_TYPES=["전필","전선","심선","융선"];
 const TOTAL_NEED=130;
 const FUSION_CAP=9; // 융합전공 중복인정 한도(운영지침 제4조)
-const CREDIT_CAP=22; // 학기당 신청 가능 최대 학점
 const FUSION_SET=new Set(CATALOG.filter(c=>c[4]).map(c=>c[0]));
 function isDual(c){return c.type!=="융선"&&(FUSION_SET.has(c.name)||c.fu);}
-// 중복인정 체크된 과목을 한도(FUSION_CAP) 내에서 융합전공으로 "이관"한다.
-// 이관된 과목의 학점은 원래 이수구분(기본전공/교양/특화) 집계에서 빠진다.
-// 한도를 넘어선 과목은 이관되지 않고 원래 이수구분에 그대로 남는다.
-function fuAlloc(){
-  let rem=FUSION_CAP;
-  const takenIds=new Set(),planIds=new Set();
-  let takenCr=0,planCr=0,overCr=0;
-  db.filter(c=>c.fu&&c.type!=="융선"&&c.grade!=="F"&&c.grade!=="NP").forEach(c=>{
-    if(rem>=c.cr){takenIds.add(c.id);takenCr+=c.cr;rem-=c.cr;}else{overCr+=c.cr;}
-  });
-  plan.filter(p=>p.fu&&p.type!=="융선").forEach(p=>{
-    if(rem>=p.cr){planIds.add(p.id);planCr+=p.cr;rem-=p.cr;}else{overCr+=p.cr;}
-  });
-  return {takenIds,planIds,takenCr,planCr,overCr};
-}
+function fuTaken(){return Math.min(FUSION_CAP,earned(db.filter(c=>c.fu&&c.type!=="융선")));}
+function fuPlanned(){return Math.min(FUSION_CAP-fuTaken(),plan.filter(p=>p.fu&&p.type!=="융선").reduce((s,c)=>s+c.cr,0));}
 
 // ===== 성적표 기반 초기 데이터 (2025-1 ~ 2026-1) =====
 const DEFAULT_DATA=[
@@ -271,68 +260,16 @@ const DEFAULT_DATA=[
  {id:12,sem:"1-2",name:"일반화학",cr:3,type:"교선",grade:"A+"},
  {id:13,sem:"1-2",name:"창의적공학설계(융합자율대학)",cr:3,type:"특필",grade:"A+"},
  {id:14,sem:"1-2",name:"사회봉사",cr:1,type:"일선",grade:"P"},
- {id:15,sem:"1-2",name:"산업경영공학개론(융합자율대학)",cr:3,type:"전선",grade:"A+"},
+ {id:15,sem:"1-2",name:"산업경영공학개론(융합자율대학)",cr:3,type:"일선",grade:"A+"},
  {id:16,sem:"2-1",name:"공업통계",cr:3,type:"전필",grade:"A+"},
  {id:17,sem:"2-1",name:"이산수학",cr:3,type:"전필",grade:"A+"},
  {id:18,sem:"2-1",name:"작업 설계 및 측정",cr:3,type:"전필",grade:"A+"},
  {id:19,sem:"2-1",name:"인지공학개론",cr:3,type:"전선",grade:"A+"},
  {id:20,sem:"2-1",name:"제조공학의기초",cr:3,type:"전선",grade:"A+"},
- {id:21,sem:"2-1",name:"진로설계2(진로탐색과 자기계발)",cr:1,type:"특필",grade:"P"},
- {id:22,sem:"2-2",name:"선형대수",cr:3,type:"전필",grade:"미정"},
- {id:23,sem:"2-2",name:"객체지향 프로그래밍",cr:3,type:"전필",grade:"미정"},
- {id:24,sem:"2-2",name:"품질경영개론",cr:3,type:"전필",grade:"미정"},
- {id:25,sem:"2-2",name:"공업통계응용",cr:3,type:"전선",grade:"미정"},
- {id:26,sem:"2-2",name:"데이터모델링",cr:3,type:"교선",grade:"미정"},
- {id:27,sem:"2-2",name:"기술경영개론",cr:3,type:"전선",grade:"미정"},
- {id:28,sem:"2-2",name:"스마트팩토리개론",cr:1,type:"특선",grade:"미정"},
- {id:29,sem:"2-2",name:"메카트로닉스기초2",cr:3,type:"융선",grade:"미정"}
+ {id:21,sem:"2-1",name:"진로설계2(진로탐색과 자기계발)",cr:1,type:"특필",grade:"P"}
 ];
-
-// ===== 기본 수강 계획 (3-1 ~ 4-1) =====
-const DEFAULT_PLAN=[
- {id:31,sem:"3-1",name:"기초경영과학",cr:3,type:"전필",eg:"미정"},
- {id:32,sem:"3-1",name:"데이터베이스",cr:3,type:"전필",eg:"미정"},
- {id:33,sem:"3-1",name:"선형계획법",cr:3,type:"전선",eg:"미정"},
- {id:34,sem:"3-1",name:"공급사슬관리(SCM)",cr:3,type:"전선",eg:"미정"},
- {id:35,sem:"3-1",name:"생산운영관리",cr:3,type:"전선",eg:"미정"},
- {id:36,sem:"3-1",name:"스마트팩토리품질관리",cr:3,type:"융선",eg:"미정"},
- {id:37,sem:"3-1",name:"스마트팩토리시뮬레이션",cr:3,type:"융선",eg:"미정"},
- {id:41,sem:"3-2",name:"경영과학응용",cr:3,type:"전필",eg:"미정"},
- {id:42,sem:"3-2",name:"실험계획법",cr:3,type:"전필",eg:"미정"},
- {id:43,sem:"3-2",name:"인간공학",cr:3,type:"전필",eg:"미정"},
- {id:44,sem:"3-2",name:"확률과정론",cr:3,type:"심선",eg:"미정"},
- {id:45,sem:"3-2",name:"불확실성하의 의사결정",cr:3,type:"심선",eg:"미정"},
- {id:46,sem:"3-2",name:"산업인공지능",cr:3,type:"심선",eg:"미정"},
- {id:51,sem:"4-1",name:"기업가 정신과 창업",cr:1,type:"특필",eg:"미정"},
- {id:52,sem:"4-1",name:"진로설계4(취업전략과 실전취업)",cr:1,type:"특필",eg:"미정"},
- {id:53,sem:"4-1",name:"산업공학실무(캡스톤디자인)",cr:3,type:"특필",eg:"미정"},
- {id:54,sem:"4-1",name:"빅데이터분석",cr:3,type:"전선",eg:"미정"},
- {id:55,sem:"4-1",name:"스마트생산자원관리",cr:3,type:"융선",eg:"미정"},
- {id:56,sem:"4-1",name:"도전과 미래 영역 택1",cr:3,type:"교필",eg:"미정"},
- {id:61,sem:"계절",name:"발표와 토론",cr:2,type:"교필",eg:"미정"}
-];
-// 내장 기본 데이터 버전. 이 숫자를 올리면 브라우저에 저장된 옛 데이터를
-// 무시하고 위 DEFAULT_DATA / DEFAULT_PLAN을 다시 불러온다.
-const DATA_VER=6;
-function loadDefaults(){
-  db=DEFAULT_DATA.map(c=>({...c}));
-  plan=DEFAULT_PLAN.map(c=>({...c}));
-  localStorage.setItem("imeVer",String(DATA_VER));
-  save();saveP();
-}
-let db,plan;
-(function initStore(){
-  const stale=localStorage.getItem("imeVer")!==String(DATA_VER);
-  const savedDb=JSON.parse(localStorage.getItem("imeCredits")||"null");
-  const savedPlan=JSON.parse(localStorage.getItem("imePlan")||"null");
-  db=(stale||!savedDb)?DEFAULT_DATA.map(c=>({...c})):savedDb;
-  plan=(stale||!savedPlan)?DEFAULT_PLAN.map(c=>({...c})):savedPlan;
-  if(stale||!savedDb||!savedPlan){
-    localStorage.setItem("imeVer",String(DATA_VER));
-    localStorage.setItem("imeCredits",JSON.stringify(db));
-    localStorage.setItem("imePlan",JSON.stringify(plan));
-  }
-})();
+let db=JSON.parse(localStorage.getItem("imeCredits")||"null")||DEFAULT_DATA.map(c=>({...c}));
+let plan=JSON.parse(localStorage.getItem("imePlan")||"[]");
 const $=id=>document.getElementById(id);
 
 // ===== 탭 =====
@@ -351,8 +288,61 @@ function gpa(list){
 }
 function fmt(g){return g===null?"-":g.toFixed(2);}
 function earned(list){return list.filter(c=>c.grade!=="F"&&c.grade!=="NP").reduce((s,c)=>s+c.cr,0);}
-function save(){localStorage.setItem("imeCredits",JSON.stringify(db));}
-function saveP(){localStorage.setItem("imePlan",JSON.stringify(plan));}
+function save(){localStorage.setItem("imeCredits",JSON.stringify(db));schedulePush();}
+function saveP(){localStorage.setItem("imePlan",JSON.stringify(plan));schedulePush();}
+
+// ===== Firebase 동기화 =====
+const FIREBASE_CONFIG={
+  apiKey:"AIzaSyCA3nciIK0-RQQyheo2cVXCqTLJ_1eBTHw",
+  authDomain:"mygpa-a385d.firebaseapp.com",
+  databaseURL:"https://mygpa-a385d-default-rtdb.asia-southeast1.firebasedatabase.app",
+  projectId:"mygpa-a385d",
+  storageBucket:"mygpa-a385d.firebasestorage.app",
+  messagingSenderId:"833772399702",
+  appId:"1:833772399702:web:1c127e17228f47c6131ff7"
+};
+let fbRef=null,fbUser=null,pushTimer=null,lastPushedAt=0;
+const fbOn=typeof firebase!=="undefined"&&FIREBASE_CONFIG;
+if(fbOn){
+  firebase.initializeApp(FIREBASE_CONFIG);
+  firebase.auth().onAuthStateChanged(u=>{
+    fbUser=u;
+    if(fbRef){fbRef.off();fbRef=null;}
+    if(u){
+      fbRef=firebase.database().ref("users/"+u.uid+"/data");
+      fbRef.on("value",snap=>{
+        const d=snap.val();
+        if(!d){pushRemote();return;}
+        if(d.updatedAt===lastPushedAt)return; // 내가 방금 쓴 데이터
+        db=d.db||[];plan=d.plan||[];
+        localStorage.setItem("imeCredits",JSON.stringify(db));
+        localStorage.setItem("imePlan",JSON.stringify(plan));
+        renderAll();syncUI();
+      });
+    }
+    syncUI();
+  });
+}
+function pushRemote(){
+  if(!fbRef)return;
+  lastPushedAt=Date.now();
+  fbRef.set({db,plan,updatedAt:lastPushedAt}).then(syncUI).catch(e=>{
+    $("syncBar").innerHTML='<span style="color:var(--red)">동기화 실패: '+e.message+'</span>';
+  });
+}
+function schedulePush(){if(!fbRef)return;clearTimeout(pushTimer);pushTimer=setTimeout(pushRemote,800);}
+function fbLogin(){
+  const p=new firebase.auth.GoogleAuthProvider();
+  firebase.auth().signInWithPopup(p).catch(()=>firebase.auth().signInWithRedirect(p));
+}
+function fbLogout(){firebase.auth().signOut();}
+function syncUI(){
+  const el=$("syncBar");
+  if(!fbOn){el.innerHTML="";return;}
+  el.innerHTML=fbUser
+    ?`☁️ 동기화 중 · ${fbUser.email} <button class="btn-ghost" style="margin-left:6px;padding:4px 10px;font-size:12px" onclick="fbLogout()">로그아웃</button>`
+    :`<button class="btn-ghost" style="padding:6px 12px" onclick="fbLogin()">☁️ Google 로그인으로 기기 간 동기화</button>`;
+}
 function semLabel(s){return s==="계절"?"계절학기":s.replace("-","학년 ")+"학기";}
 
 // ===== 이수 현황 탭 =====
@@ -387,23 +377,16 @@ function render(){
   $("gpaMaj").innerHTML=`${fmt(gpa(db.filter(c=>MAJOR_TYPES.includes(c.type))))}<small> / 4.5</small>`;
   $("cnt").innerHTML=`${db.length}<small> 과목</small>`;
   let bars="";
-  const A=fuAlloc();
+  const fuX=fuTaken();
   REQS.forEach(r=>{
-    const rlist=db.filter(c=>r.types.includes(c.type));
-    let got=earned(rlist);
+    let got=earned(db.filter(c=>r.types.includes(c.type)));
     let extra="";
-    if(r.types.includes("융선")){
-      if(A.takenCr){got+=A.takenCr;extra=` <span style="color:var(--sub)">(중복인정 +${A.takenCr})</span>`;}
-    }else{
-      const moved=earned(rlist.filter(c=>A.takenIds.has(c.id)));
-      if(moved){got-=moved;extra=` <span style="color:var(--sub)">(중복인정 −${moved})</span>`;}
-    }
+    if(r.types.includes("융선")&&fuX){got+=fuX;extra=` <span style="color:var(--sub)">(중복인정 ${fuX} 포함)</span>`;}
     if(r.need===0&&got===0)return;
     const pct=r.need?Math.min(100,got/r.need*100):(got?100:0);
     const ok=r.need&&got>=r.need;
     bars+=`<div class="bar-row"><div class="bar-head"><b>${r.key}</b><span>${got}${r.need?` / ${r.need}학점`:"학점"}${extra} ${ok?'<span class="done">✓ 충족</span>':r.need?`(${Math.max(0,r.need-got)}학점 남음)`:""}</span></div><div class="bar"><i style="width:${pct}%;background:${r.color};border-radius:99px"></i></div></div>`;
   });
-  if(A.overCr)bars+=`<div class="note" style="color:var(--orange)">⚠ 중복인정 한도(${FUSION_CAP}학점)</div>`;
   const tpct=Math.min(100,tot/TOTAL_NEED*100),tok=tot>=TOTAL_NEED;
   bars+=`<div class="bar-row" style="margin-top:20px;padding-top:14px;border-top:1px dashed var(--line)"><div class="bar-head"><b>총 취득학점</b><span>${tot} / ${TOTAL_NEED}학점 ${tok?'<span class="done">✓ 충족</span>':`(${TOTAL_NEED-tot}학점 남음)`}</span></div><div class="bar" style="height:14px"><i style="width:${tpct}%;background:linear-gradient(90deg,var(--blue),var(--purple));border-radius:99px"></i></div></div>`;
   $("bars").innerHTML=bars;
@@ -416,7 +399,7 @@ function render(){
     html+=`<div class="sem-title">${semLabel(s)}<span>${earned(list)}학점 · 평점 ${fmt(gpa(list))}</span></div>
     <table><tr><th style="width:38%">과목명</th><th>이수구분</th><th>학점</th><th>성적</th><th></th></tr>`;
     list.forEach(c=>{
-      const fuChk=isDual(c)?`<div style="font-size:11px;margin-top:2px"><label title="체크하면 이 과목 학점이 원래 이수구분에서 빠지고 융합전공 학점으로 계산됩니다 (한도 ${FUSION_CAP}학점)" style="display:inline;color:var(--orange);cursor:pointer"><input type="checkbox" style="width:auto;vertical-align:-2px" ${c.fu?"checked":""} onchange="toggleFu(${c.id})"> 융합전공 중복인정</label></div>`:"";
+      const fuChk=isDual(c)?`<div style="font-size:11px;margin-top:2px"><label style="display:inline;color:var(--orange);cursor:pointer"><input type="checkbox" style="width:auto;vertical-align:-2px" ${c.fu?"checked":""} onchange="toggleFu(${c.id})"> 융합전공 중복인정</label></div>`:"";
       html+=`<tr><td>${c.name}${fuChk}</td>
       <td><select onchange="chType(${c.id},this.value)" style="color:${TYPE_COLOR[c.type]};font-weight:600">${TYPES.map(t=>`<option ${t===c.type?"selected":""}>${t}</option>`).join("")}</select></td>
       <td>${c.cr}</td>
@@ -438,7 +421,6 @@ function importData(e){
   r.onload=()=>{try{
     const d=JSON.parse(r.result);
     if(Array.isArray(d)){db=d;}else{db=d.db||[];plan=d.plan||[];}
-    localStorage.setItem("imeVer",String(DATA_VER));
     save();saveP();renderAll();
   }catch{alert("파일을 읽을 수 없어요.")}};
   r.readAsText(f);
@@ -498,18 +480,11 @@ function chEG(id,g){const p=plan.find(p=>p.id===id);if(p){p.eg=g;saveP();renderP
 
 function renderPlan(){
   let bars="";
-  const A=fuAlloc();
+  const fuT=fuTaken(),fuP=fuPlanned();
   REQS.forEach(r=>{
-    const rlist=db.filter(c=>r.types.includes(c.type));
-    const plist=plan.filter(c=>r.types.includes(c.type));
-    let got=earned(rlist);
-    let pl=plist.reduce((s,c)=>s+c.cr,0);
-    if(r.types.includes("융선")){
-      got+=A.takenCr;pl+=A.planCr;
-    }else{
-      got-=earned(rlist.filter(c=>A.takenIds.has(c.id)));
-      pl-=plist.filter(c=>A.planIds.has(c.id)).reduce((s,c)=>s+c.cr,0);
-    }
+    let got=earned(db.filter(c=>r.types.includes(c.type)));
+    let pl=plan.filter(c=>r.types.includes(c.type)).reduce((s,c)=>s+c.cr,0);
+    if(r.types.includes("융선")){got+=fuT;pl+=fuP;}
     if(r.need===0&&got===0&&pl===0)return;
     const base=r.need||Math.max(got+pl,1);
     const gp=Math.min(100,got/base*100);
@@ -517,10 +492,10 @@ function renderPlan(){
     const okNow=r.need&&got>=r.need;
     const okPlan=r.need&&got+pl>=r.need;
     let status=okNow?'<span class="done">✓ 충족</span>':okPlan?'<span class="plan-txt">✓ 계획대로면 충족</span>':r.need?`(${r.need-got-pl}학점 더 필요)`:"";
-    bars+=`<div class="bar-row"><div class="bar-head"><b>${r.key}</b><span>${got}${pl?` <span class="plan-txt">+${pl}</span>`:""}${r.need?` / ${r.need}학점`:"학점"} ${status}</span></div>
+    const dualNote=r.types.includes("융선")&&(fuT||fuP)?` <span style="color:var(--sub)">(중복인정 ${fuT+fuP} 포함)</span>`:"";
+    bars+=`<div class="bar-row"><div class="bar-head"><b>${r.key}</b><span>${got}${pl?` <span class="plan-txt">+${pl}</span>`:""}${r.need?` / ${r.need}학점`:"학점"}${dualNote} ${status}</span></div>
     <div class="bar"><i style="width:${gp}%;background:${r.color};border-radius:99px 0 0 99px"></i><i style="width:${pp}%;background:#fbbf77"></i></div></div>`;
   });
-  if(A.overCr)bars+=`<div class="note" style="color:var(--orange)">⚠ 중복인정 한도(${FUSION_CAP}학점)를 넘은 ${A.overCr}학점은 융합전공으로 이관되지 않고 원래 이수구분에 남아 있습니다.</div>`;
   const tot=earned(db),ptot=plan.reduce((s,c)=>s+c.cr,0);
   const gp=Math.min(100,tot/TOTAL_NEED*100),pp=Math.min(100-gp,ptot/TOTAL_NEED*100);
   bars+=`<div class="bar-row" style="margin-top:20px;padding-top:14px;border-top:1px dashed var(--line)"><div class="bar-head"><b>총 학점</b><span>${tot} <span class="plan-txt">+${ptot}</span> = ${tot+ptot} / ${TOTAL_NEED}학점 ${tot+ptot>=TOTAL_NEED?'<span class="plan-txt">✓ 계획대로면 충족</span>':`(${TOTAL_NEED-tot-ptot}학점 더 필요)`}</span></div>
@@ -535,7 +510,7 @@ function renderPlan(){
   const ptotAll=plan.reduce((s,c)=>s+c.cr,0);
   $("planSummary").innerHTML=
     `계획 과목: <b>${plan.length}과목 ${ptotAll}학점</b>`+
-    (egSet?` · 예상 성적 반영 시 전체 평점: <b>${fmt(proj)}</b> (현재 ${fmt(gpa(db))})`:"");
+    (egSet?` · 예상 성적 반영 시 전체 평점: <b>${fmt(proj)}</b> (현재 ${fmt(gpa(db))})`:` · 아래에서 예상 성적을 입력하면 예상 평점을 계산해줘요 (현재 ${fmt(gpa(db))})`);
 }
 
 function renderPlanList(){
@@ -545,10 +520,10 @@ function renderPlanList(){
     const list=plan.filter(p=>p.sem===s);
     if(!list.length)return;
     const cr=list.reduce((a,c)=>a+c.cr,0);
-    html+=`<div class="sem-title">${semLabel(s)}<span>${cr}학점 계획${cr>CREDIT_CAP?` · <b style="color:var(--red)">${CREDIT_CAP}학점 초과!</b>`:""}</span></div>
+    html+=`<div class="sem-title">${semLabel(s)}<span>${cr}학점 계획${cr>21?' · <b style="color:var(--red)">21학점 초과!</b>':""}</span></div>
     <table><tr><th style="width:36%">과목명</th><th>구분</th><th>학점</th><th>학기</th><th>예상성적</th><th></th></tr>`;
     list.forEach(p=>{
-      const fuChk=isDual(p)?`<div style="font-size:11px;margin-top:2px"><label title="체크하면 이 과목 학점이 원래 이수구분에서 빠지고 융합전공 학점으로 계산됩니다 (한도 ${FUSION_CAP}학점)" style="display:inline;color:var(--orange);cursor:pointer"><input type="checkbox" style="width:auto;vertical-align:-2px" ${p.fu?"checked":""} onchange="toggleFuP(${p.id})"> 융합전공 중복인정</label></div>`:"";
+      const fuChk=isDual(p)?`<div style="font-size:11px;margin-top:2px"><label style="display:inline;color:var(--orange);cursor:pointer"><input type="checkbox" style="width:auto;vertical-align:-2px" ${p.fu?"checked":""} onchange="toggleFuP(${p.id})"> 융합전공 중복인정</label></div>`:"";
       html+=`<tr><td>${p.name}${fuChk}</td>
       <td><select onchange="chPlanType(${p.id},this.value)" style="color:${TYPE_COLOR[p.type]};font-weight:600">${TYPES.map(t=>`<option ${t===p.type?"selected":""}>${t}</option>`).join("")}</select></td>
       <td>${p.cr}</td>
@@ -588,7 +563,7 @@ function renderCurr(){
 }
 function renderPlanAll(){renderPlan();renderPlanList();renderCat();renderCurr();}
 function renderAll(){render();renderPlanAll();}
-renderAll();
+renderAll();syncUI();
 </script>
 </body>
 </html>
